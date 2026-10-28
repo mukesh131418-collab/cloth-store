@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: cloth-store
+    runtime: docker
+    repo: https://github.com/mukesh131418-collab/cloth-store
+    branch: main
+    plan: 0.5c-512mb
+    healthCheckPath: /api/products
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        generateValue: true
+    disk:
+      name: store-data
+      mountPath: /app/data
+      sizeGB: 1

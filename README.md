@@ -1,5 +1,11 @@
 # ATELIER clothing store
 
+## Deploy on Render
+
+Open https://dashboard.render.com/select-repo?type=blueprint and select `mukesh131418-collab/cloth-store`. Render reads `render.yaml`, builds the Docker image, and mounts a 1 GB persistent disk at `/app/data` for the database and product uploads. This configuration uses a paid web service and disk; review Render's estimate before creating resources.
+
+Supply your admin email when prompted. Render generates `ADMIN_PASSWORD`; retrieve it from the service's Environment settings to sign in at `/admin`. Do not share the password or commit it. The service URL is shown in the Render dashboard after deployment. Checkout remains demo-only, with no payment collection. Existing local products, orders and uploaded photos are not transferred automatically. Admin sessions reset on restart.
+
 Local VS Code project, requiring Node.js 24 or newer. No npm dependencies needed.
 
 ## Run
