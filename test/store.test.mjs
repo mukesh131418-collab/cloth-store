@@ -1,0 +1,37 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtempSync,rmSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+test('admin authorization, CSRF, authoritative pricing, stock and cancellation',async()=>{
+const dir=mkdtempSync(path.join(os.tmpdir(),'atelier-test-'));
+const child=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{cwd:dir,env:{...process.env,PORT:'34971',ADMIN_EMAIL:'test@example.com',ADMIN_PASSWORD:'integration-test-secret'}});
+try{await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{if(String(d).includes('Store:'))resolve()});child.on('error',reject);child.on('exit',c=>reject(Error('Server exited '+c)))});
+const call=(p,method='GET',data,headers={})=>fetch('http://127.0.0.1:34971'+p,{method,headers:{'Content-Type':'application/json',...headers},body:data?JSON.stringify(data):undefined});
+assert.equal((await call('/api/admin/orders')).status,401);
+assert.equal((await call('/api/login','POST',{email:'test@example.com',password:'wrong'})).status,401);
+const login=await call('/api/login','POST',{email:'test@example.com',password:'integration-test-secret'});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0],{csrf}=await login.json();const headers={Cookie:cookie,'X-CSRF-Token':csrf};
+assert.equal((await call('/api/admin/products','POST',{}, {Cookie:cookie})).status,403);
+assert.equal((await call('/api/orders','POST',{}, {Origin:'https://attacker.example'})).status,403);
+const p=(await (await call('/api/products')).json())[0];
+const order=await call('/api/orders','POST',{name:'Test Buyer',email:'buyer@example.com',address:'Test address',total:1,items:[{id:p.id,size:'M',quantity:2,price:1}]});assert.equal(order.status,201);const o=await order.json();assert.equal(o.total,p.price*2);
+assert.equal((await (await call('/api/products')).json())[0].stock,p.stock-2);
+assert.equal((await call('/api/admin/orders','PATCH',{id:o.id,status:'Cancelled'},headers)).status,200);
+assert.equal((await (await call('/api/products')).json())[0].stock,p.stock);
+assert.equal((await call('/api/admin/orders','PATCH',{id:o.id,status:'Cancelled'},headers)).status,400);
+assert.equal((await call('/api/admin/products','POST',{...p,name:'Updated piece'},headers)).status,200);
+assert.equal((await (await call('/api/products')).json())[0].name,'Updated piece');
+const upload=await call('/api/admin/upload','POST',{data:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='},headers);assert.equal(upload.status,201);const photo=await upload.json();
+assert.equal((await call('/api/admin/product-photos','POST',{id:p.id,front:photo.url,back:photo.url},headers)).status,200);
+assert.equal((await (await call('/api/products')).json())[0].front,photo.url);
+assert.equal((await call(photo.url)).headers.get('content-type'),'image/png');
+assert.equal((await call('/api/admin/upload','POST',{data:'data:image/png;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='},headers)).status,400);
+assert.equal((await call('/api/admin/upload','POST',{data:'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='},headers)).status,400);
+assert.equal((await call('/api/admin/product-photos','POST',{id:p.id,front:'/uploads/../../.env',back:''},headers)).status,400);
+assert.equal((await call('/api/orders','POST',{name:'T',email:'buyer@example.com',address:'Address',items:[{id:p.id,size:'M',quantity:999}]})).status,400);
+assert.equal((await call('/api/logout','POST',{},headers)).status,200);
+assert.equal((await call('/api/admin/orders','GET',undefined,headers)).status,401);
+}finally{child.kill();await new Promise(r=>child.once('exit',r));rmSync(dir,{recursive:true,force:true});}
+});
